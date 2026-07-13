@@ -1,0 +1,322 @@
+---
+title: "EDA"
+format: html
+editor: visual
+---
+
+```{r}
+library(tidyverse)
+library(gt)
+library(ggplot2)
+```
+
+## Read in Data
+
+```{r}
+nflData = read.csv(file = "data/nflData.csv")
+head(nflData)
+```
+
+## Select Variables we will work with:
+
+```{r}
+names(nflData)
+
+```
+
+```{r}
+
+## Remove any cols with prob:
+
+nflDataClean = nflData |> select(-contains("prob"))
+
+## Select Desired Columns:
+
+
+nflDataClean = nflDataClean |> select(
+  Date,
+  qtr,
+  posteam,
+  ydstogo,
+  PassOutcome,
+  YardsAfterCatch,
+  InterceptionThrown,
+  GameID,
+  TimeSecs,
+  yrdln,
+  ydsnet,
+  Touchdown,
+  PassLength,
+  AbsScoreDiff,
+  Season,
+  Drive,
+  time,
+  yrdline100,
+  Yards.Gained,
+  PlayType,
+  PassAttempt,
+  HomeTeam,
+  AwayTeam,
+  PosTeamScore,
+  DefTeamScore
+) |>
+  filter(posteam != "")
+
+```
+
+## Cast Variables to Correct Type:
+
+-   QTR
+
+-   Passoutcome
+
+-   HomeTeam
+
+-   AwayTeam
+
+-   PlayType
+
+-   Season
+
+-   GameID
+
+## Cast Categorical Variables to Factors
+
+```{r}
+
+factors = c("qtr",
+            "posteam",
+            "PassOutcome",
+            "HomeTeam",
+            "AwayTeam",
+            "PlayType",
+            "Season",
+            "GameID",
+            "Touchdown",
+            "PassAttempt"
+            )
+nflDataClean[factors] = lapply(nflDataClean[factors], as.factor)
+
+
+head(nflDataClean)
+```
+
+## Summarize Numeric Variables:
+
+I decided to summaries across team and season, will use this for later
+
+```{r}
+
+summaries = nflDataClean |> group_by(posteam) |>
+  summarize(across(where(is.numeric), 
+                   list("mean" = mean), 
+                   .names = "{.fn}_{.col}"))
+
+gt(summaries)
+
+```
+
+```{r}
+
+
+```
+
+## Contingency Tables
+
+### Types of Plays
+
+```{r}
+
+plays = nflData |> group_by(PlayType)|> select(PlayType) |> summarise(count = n()) |> arrange(desc(count))
+
+gt(plays) |> tab_header(title = "Types of Plays Run")
+
+nflData |> filter(PlayType == "End of Game") |> select(PosTeamScore)
+
+
+```
+
+## Pass Length vs Pass Result
+
+```{r}
+passResults = nflData|> select(PassOutcome, PassLength) |> filter(PassLength == "Deep" | PassLength == "Short") |> group_by(PassOutcome, PassLength) |> summarize(count = n()) |> pivot_wider(names_from = PassOutcome, values_from = count)
+
+
+
+gt(passResults) |> tab_header("Outcome of Pass vs Pass Length")
+```
+
+## Pass vs Run Contingency Table:
+
+```{r}
+
+passAndRunAttempts = nflDataClean |> 
+  filter(PlayType == "Run" | PlayType == "Pass") |>
+  group_by(posteam, PlayType) |> summarize(count = n())
+
+gt(passAndRunAttempts |> pivot_wider(names_from = posteam, values_from = count))
+  
+```
+
+```{r}
+
+passAndRunYds = nflData |> filter(PlayType == "Run" | PlayType == "Pass") |>
+  select(Yards.Gained, PlayType)
+head(passAndRunYds)
+
+
+```
+
+## Bar Chart - Are teams running the ball less?
+
+```{r}
+
+runPlaysCounts = nflDataClean |> select(Season, GameID, PlayType, Yards.Gained) |>
+  filter(PlayType == "Run") |> group_by(GameID, Season) |> 
+  summarize(runsPerGame = n()) |>
+  ungroup() |>
+  group_by(Season) |>
+  summarize(avgRunsPerGame = mean(runsPerGame))
+
+ggplot(runPlaysCounts, aes(x = avgRunsPerGame)) + geom_bar()
+
+
+```
+
+## Side By Side Bar Chart- Run Plays vs Pass Per Season
+
+## Histogram: Rush Yards Per Game
+
+```{r}
+rushYdsPerGame = nflDataClean |> select(Season, GameID, PlayType, Yards.Gained) |>
+  filter(PlayType == "Run") |> group_by(GameID) |> 
+  summarize(ydsPerGame = sum(Yards.Gained))
+
+g = ggplot(rushYdsPerGame, aes(x = ydsPerGame))
+
+head(rushYdsPerGame)
+
+g + geom_histogram()
+
+```
+
+## Scatter - Pass Yds vs Rush Yards Per Team Per Game:
+
+```{r}
+
+ydsYears = nflDataClean |> select(Season, GameID, PlayType, Yards.Gained, posteam) |>
+  filter(PlayType == "Run" | PlayType == "Pass") |>
+  drop_na(posteam) |>
+  group_by(GameID, Season, posteam, PlayType) |>
+  summarize(ydsPerPlay = sum(Yards.Gained))
+
+summaryComp = ydsYears |> filter(PlayType == "Pass") |> select(Season, posteam, ydsPerPlay)
+
+runs = ydsYears |> ungroup()|> filter(PlayType == "Run") |> select(ydsPerPlay) |> rename(rushYdsPerPlay = ydsPerPlay)
+
+
+summaryComp$rushYdsPerPlay = runs$rushYdsPerPlay
+summaryComp = summaryComp |> rename(passYdsPerPlay = ydsPerPlay) |> 
+  mutate(teamYr = paste(Season, posteam, sep = "-"))
+
+
+head(summaryComp)
+
+
+
+g = ggplot(summaryComp, aes(x = rushYdsPerPlay, y = passYdsPerPlay))
+
+g + geom_point(aes(color = posteam))
+
+
+```
+
+## Box Plot
+
+## Faceted:
+
+## Other Fun
+
+## How would I extract final results of a game?
+
+1.  Filter by team (home team == myTeam \| away team == myTeam)
+2.  For each game (distinct(gameIds)
+3.  Pick out "End of Game:
+4.  Get Home Team Score and Away Team Score
+
+```{r}
+myTeam = "NYG"
+yourTeam = "PHI"
+
+## Get games involving both teams
+myGames = as.tibble(nflDataClean[
+  ((nflDataClean$HomeTeam == myTeam | nflDataClean$AwayTeam == myTeam) & (nflDataClean$HomeTeam == yourTeam | nflDataClean$AwayTeam == yourTeam)),])
+
+#myGames = nflDataClean
+#head(myGames)
+#get vector of games
+games = unique(myGames$GameID)
+
+#print(mygames |> filter(PlayType == "End of Game"))
+
+
+myGames = myGames |> filter(GameID %in% games) |> group_by(GameID) |> 
+  drop_na(PosTeamScore, DefTeamScore) |>
+  mutate(homeTeamScore = 
+           ifelse(HomeTeam == posteam, PosTeamScore, DefTeamScore),
+         awayTeamScore = 
+           ifelse(AwayTeam == posteam, PosTeamScore, DefTeamScore)) |>
+  mutate(homeTeamFinalScore = max(homeTeamScore),
+         awayTeamFinalScore = max(awayTeamScore)) |>
+  distinct(GameID, .keep_all = TRUE) |> select(Date,
+                                       GameID,
+                                       HomeTeam,
+                                       homeTeamFinalScore,
+                                       AwayTeam,
+                                       awayTeamFinalScore
+                                       ) |>
+  mutate(winningTeam = factor(ifelse((homeTeamFinalScore > awayTeamFinalScore), as.character(HomeTeam), as.character(AwayTeam))))
+  
+
+
+gt(myGames |> ungroup()) |> tab_header("Matchup Results")
+
+#resultsDF = tibble(colnames(c("homeTeam", "homeTeamScore", "awayTeam", "awayTeamScore")))
+```
+
+```{r}
+
+
+wins = myGames |> mutate(
+  homeTeamWon = ifelse(HomeTeam == winningTeam, 1, 0), 
+  awayTeamWon = ifelse(AwayTeam == winningTeam, 1, 0)) |> group_by(HomeTeam)|> summarize(totalWins = sum(homeTeamWon + awayTeamWon))
+
+g = ggplot(wins, aes(x = HomeTeam, y = totalWins))
+g + geom_col(aes(fill = HomeTeam))
+```
+
+```{r}
+
+## Time series - yds per game over time 
+
+ydsYears = nflDataClean |> select(Date, Season, GameID, PlayType, Yards.Gained, posteam) |>
+  filter(PlayType == "Run" | PlayType == "Pass") |>
+  drop_na(posteam) |>
+  group_by(Date, GameID, Season, posteam, PlayType) |>
+  summarize(ydsPerPlay = sum(Yards.Gained))
+
+summaryComp = ydsYears |> filter(PlayType == "Pass") |> select(Season, posteam, ydsPerPlay)
+
+runs = ydsYears |> ungroup()|> filter(PlayType == "Run") |> select(ydsPerPlay) |> rename(rushYdsPerPlay = ydsPerPlay)
+
+
+summaryComp$rushYdsPerPlay = runs$rushYdsPerPlay
+summaryComp = summaryComp |> rename(passYdsPerPlay = ydsPerPlay) |> 
+  mutate(teamYr = paste(Season, posteam, sep = "-"))
+
+
+g = ggplot(summaryComp, aes(x = Date, y = passYdsPerPlay)) +geom_line(aes(group = posteam, color = posteam))
+
+g + facet_wrap(posteam ~ .)
+
+```
